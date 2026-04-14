@@ -35,7 +35,7 @@ const MobileView: React.FC = () => {
   useEffect(() => {
     if (!sessionId) return;
 
-    const newSocket = io({
+    const newSocket = io(window.location.origin, {
       transports: ["websocket", "polling"],
       reconnectionAttempts: 10,
     });
