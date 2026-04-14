@@ -5,12 +5,16 @@ import { Monitor, Smartphone, Copy, Check, MousePointer2, Keyboard as KeyboardIc
 import { motion, AnimatePresence } from "motion/react";
 
 const LaptopView: React.FC = () => {
-  const [sessionId] = useState(() => Math.random().toString(36).substring(2, 10));
+  const [sessionId, setSessionId] = useState(() => Math.random().toString(36).substring(2, 10));
   const [socket, setSocket] = useState<Socket | null>(null);
   const [text, setText] = useState("");
   const [copied, setCopied] = useState(false);
   const [cursorPos, setCursorPos] = useState({ x: 50, y: 50 });
   const [isConnected, setIsConnected] = useState(false);
+
+  const refreshSession = () => {
+    window.location.reload();
+  };
   
   const baseUrl = (process.env.APP_URL && process.env.APP_URL !== "MY_APP_URL") 
     ? process.env.APP_URL 
@@ -18,10 +22,16 @@ const LaptopView: React.FC = () => {
   const remoteUrl = `${baseUrl.replace(/\/$/, "")}/remote/${sessionId}`;
 
   useEffect(() => {
-    const newSocket = io();
+    const newSocket = io({
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 5,
+    });
     setSocket(newSocket);
 
-    newSocket.emit("join-session", sessionId);
+    newSocket.on("connect", () => {
+      console.log("Laptop connected to socket:", newSocket.id);
+      newSocket.emit("join-session", sessionId);
+    });
 
     newSocket.on("keyboard-event", (data: any) => {
       if (data.type === "text") {
@@ -30,10 +40,21 @@ const LaptopView: React.FC = () => {
     });
 
     newSocket.on("mouse-event", (data: any) => {
-      setCursorPos((prev) => ({
-        x: Math.max(0, Math.min(100, prev.x + data.dx)),
-        y: Math.max(0, Math.min(100, prev.y + data.dy)),
-      }));
+      if (data.type === "move") {
+        setCursorPos((prev) => ({
+          x: Math.max(0, Math.min(100, prev.x + data.dx)),
+          y: Math.max(0, Math.min(100, prev.y + data.dy)),
+        }));
+      } else if (data.type === "click") {
+        // Visual feedback for click
+        const clickIndicator = document.createElement("div");
+        clickIndicator.className = `absolute w-8 h-8 rounded-full border-2 ${data.button === 'right' ? 'border-red-500' : 'border-blue-500'} animate-ping pointer-events-none`;
+        clickIndicator.style.left = `${cursorPos.x}%`;
+        clickIndicator.style.top = `${cursorPos.y}%`;
+        clickIndicator.style.transform = "translate(-50%, -50%)";
+        document.getElementById("virtual-screen")?.appendChild(clickIndicator);
+        setTimeout(() => clickIndicator.remove(), 1000);
+      }
       setIsConnected(true);
     });
 
@@ -68,21 +89,32 @@ const LaptopView: React.FC = () => {
           </div>
 
           <div className="space-y-4">
-            <div className="flex items-center gap-3 text-slate-300">
-              <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}`} />
-              <span>{isConnected ? '스마트폰 연결됨' : '연결 대기 중...'}</span>
+            <div className="flex items-center justify-between gap-3 text-slate-300">
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}`} />
+                <span>{isConnected ? '스마트폰 연결됨' : '연결 대기 중...'}</span>
+              </div>
+              <button onClick={refreshSession} className="text-xs text-blue-400 hover:underline">코드 새로고침</button>
             </div>
-            <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-xl flex items-center justify-between">
-              <code className="text-blue-400 font-mono">{remoteUrl}</code>
-              <button onClick={handleCopy} className="p-2 hover:bg-slate-800 rounded-lg transition-colors">
-                {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-              </button>
+            <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-xl flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-slate-500 font-bold uppercase">연결 코드</span>
+                <button onClick={handleCopy} className="p-2 hover:bg-slate-800 rounded-lg transition-colors">
+                  {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+              <div className="text-3xl font-mono text-blue-400 tracking-widest text-center py-2">
+                {sessionId}
+              </div>
+              <div className="text-[10px] text-slate-600 break-all">
+                {remoteUrl}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Right Side: Virtual Desktop / Text Area */}
-        <div className="relative aspect-video bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
+        <div id="virtual-screen" className="relative aspect-video bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
           {/* Virtual Cursor */}
           <motion.div 
             className="absolute z-50 pointer-events-none"

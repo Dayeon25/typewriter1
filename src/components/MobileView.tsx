@@ -19,8 +19,11 @@ type Mode = "keyboard" | "mouse";
 type Language = "ko" | "en" | "num" | "sym";
 
 const MobileView: React.FC = () => {
-  const { sessionId } = useParams<{ sessionId: string }>();
+  const { sessionId: urlSessionId } = useParams<{ sessionId: string }>();
+  const [sessionId, setSessionId] = useState(urlSessionId || "");
+  const [manualId, setManualId] = useState("");
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
   const [mode, setMode] = useState<Mode>("keyboard");
   const [lang, setLang] = useState<Language>("ko");
   const [textBuffer, setTextBuffer] = useState<string[]>([]);
@@ -30,24 +33,27 @@ const MobileView: React.FC = () => {
   const lastTouch = useRef<{ x: number, y: number } | null>(null);
 
   useEffect(() => {
-    // Force the socket to connect to the origin server
-    const socketUrl = (process.env.APP_URL && process.env.APP_URL !== "MY_APP_URL")
-      ? process.env.APP_URL
-      : window.location.origin;
+    if (!sessionId) return;
 
-    const newSocket = io(socketUrl, {
+    const newSocket = io({
       transports: ["websocket", "polling"],
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
     });
     setSocket(newSocket);
     
     newSocket.on("connect", () => {
-      console.log("Connected to server:", newSocket.id);
+      console.log("Mobile connected to server:", newSocket.id);
       newSocket.emit("join-session", sessionId);
+      setIsConnected(true);
+    });
+
+    newSocket.on("disconnect", () => {
+      setIsConnected(false);
     });
 
     newSocket.on("connect_error", (err) => {
-      console.error("Connection error details:", err);
+      console.error("Mobile connection error:", err);
+      setIsConnected(false);
     });
 
     return () => { newSocket.close(); };
@@ -141,23 +147,58 @@ const MobileView: React.FC = () => {
     if (mode !== "mouse") return;
     const touch = e.touches[0];
     if (lastTouch.current) {
-      const dx = (touch.clientX - lastTouch.current.x) * 1.5; // Increased sensitivity
+      const dx = (touch.clientX - lastTouch.current.x) * 1.5;
       const dy = (touch.clientY - lastTouch.current.y) * 1.5;
-      socket?.emit("mouse-event", { sessionId, data: { dx, dy } });
+      socket?.emit("mouse-event", { sessionId, data: { type: "move", dx, dy } });
     }
     lastTouch.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleMouseClick = (button: 'left' | 'right') => {
+    socket?.emit("mouse-event", { sessionId, data: { type: "click", button } });
   };
 
   const stopMouse = () => {
     lastTouch.current = null;
   };
 
+  if (!sessionId) {
+    return (
+      <div className="fixed inset-0 bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6 font-sans">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center space-y-2">
+            <h1 className="text-3xl font-bold text-blue-400">연결 코드 입력</h1>
+            <p className="text-slate-400">노트북 화면에 표시된 8자리 코드를 입력하세요.</p>
+          </div>
+          <div className="space-y-4">
+            <input 
+              type="text"
+              value={manualId}
+              onChange={(e) => setManualId(e.target.value)}
+              placeholder="예: a1b2c3d4"
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-4 text-center text-2xl font-mono focus:border-blue-500 outline-none"
+            />
+            <button 
+              onClick={() => setSessionId(manualId)}
+              className="w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-xl font-bold text-lg transition-all active:scale-95"
+            >
+              연결하기
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-slate-950 text-slate-100 flex flex-col font-sans select-none overflow-hidden">
       {/* Top Preview Bar */}
       <div className="p-4 bg-slate-900 border-b border-slate-800 flex flex-col gap-2">
         <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-widest">
-          <span>{mode === 'keyboard' ? '키보드 모드' : '터치패드 모드'}</span>
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+            <span>{mode === 'keyboard' ? '키보드 모드' : '터치패드 모드'}</span>
+          </div>
           <button onClick={() => setTextBuffer([])} className="text-red-400 hover:text-red-300">전체 삭제</button>
           <span className="text-blue-400">{sessionId}</span>
         </div>
@@ -211,8 +252,20 @@ const MobileView: React.FC = () => {
                 </div>
                 <p className="text-slate-500 font-medium">손가락을 움직여 커서를 이동하세요</p>
                 <div className="flex gap-4 mt-8">
-                  <div className="w-20 h-32 bg-slate-800 rounded-xl border border-slate-700 flex items-end justify-center pb-4 text-xs font-bold text-slate-500">왼쪽 클릭</div>
-                  <div className="w-20 h-32 bg-slate-800 rounded-xl border border-slate-700 flex items-end justify-center pb-4 text-xs font-bold text-slate-500">오른쪽 클릭</div>
+                  <motion.button 
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => handleMouseClick('left')}
+                    className="w-24 h-32 bg-slate-800 rounded-xl border border-slate-700 flex items-end justify-center pb-4 text-xs font-bold text-slate-500 active:bg-blue-500/20 active:border-blue-500/50"
+                  >
+                    왼쪽 클릭
+                  </motion.button>
+                  <motion.button 
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => handleMouseClick('right')}
+                    className="w-24 h-32 bg-slate-800 rounded-xl border border-slate-700 flex items-end justify-center pb-4 text-xs font-bold text-slate-500 active:bg-red-500/20 active:border-red-500/50"
+                  >
+                    오른쪽 클릭
+                  </motion.button>
                 </div>
               </div>
             </motion.div>
