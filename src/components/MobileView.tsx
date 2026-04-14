@@ -31,7 +31,11 @@ const MobileView: React.FC = () => {
 
   useEffect(() => {
     // Force the socket to connect to the origin server
-    const newSocket = io(window.location.origin, {
+    const socketUrl = (process.env.APP_URL && process.env.APP_URL !== "MY_APP_URL")
+      ? process.env.APP_URL
+      : window.location.origin;
+
+    const newSocket = io(socketUrl, {
       transports: ["websocket", "polling"],
       reconnectionAttempts: 5,
     });

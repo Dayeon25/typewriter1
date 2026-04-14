@@ -12,8 +12,10 @@ const LaptopView: React.FC = () => {
   const [cursorPos, setCursorPos] = useState({ x: 50, y: 50 });
   const [isConnected, setIsConnected] = useState(false);
   
-  const baseUrl = process.env.APP_URL || window.location.origin;
-  const remoteUrl = `${baseUrl}/remote/${sessionId}`;
+  const baseUrl = (process.env.APP_URL && process.env.APP_URL !== "MY_APP_URL") 
+    ? process.env.APP_URL 
+    : window.location.origin;
+  const remoteUrl = `${baseUrl.replace(/\/$/, "")}/remote/${sessionId}`;
 
   useEffect(() => {
     const newSocket = io();
