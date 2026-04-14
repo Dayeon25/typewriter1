@@ -10,7 +10,8 @@ import {
   Space,
   Globe,
   Hash,
-  Type
+  Type,
+  Copy
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -29,22 +30,86 @@ const MobileView: React.FC = () => {
   const lastTouch = useRef<{ x: number, y: number } | null>(null);
 
   useEffect(() => {
-    const newSocket = io();
+    // Force the socket to connect to the origin server
+    const newSocket = io(window.location.origin, {
+      transports: ["websocket", "polling"],
+      reconnectionAttempts: 5,
+    });
     setSocket(newSocket);
-    newSocket.emit("join-session", sessionId);
+    
+    newSocket.on("connect", () => {
+      console.log("Connected to server:", newSocket.id);
+      newSocket.emit("join-session", sessionId);
+    });
+
+    newSocket.on("connect_error", (err) => {
+      console.error("Connection error details:", err);
+    });
+
     return () => { newSocket.close(); };
   }, [sessionId]);
 
   // Sync text to laptop
   useEffect(() => {
     if (socket) {
+      const assembled = Hangul.assemble(processCheonjiin(textBuffer));
       socket.emit("keyboard-event", { 
         sessionId, 
-        data: { type: "text", value: Hangul.assemble(textBuffer) } 
+        data: { type: "text", value: assembled } 
       });
+      setPreviewText(assembled);
     }
-    setPreviewText(Hangul.assemble(textBuffer));
   }, [textBuffer, socket, sessionId]);
+
+  const processCheonjiin = (buffer: string[]): string[] => {
+    const result: string[] = [];
+    let i = 0;
+    while (i < buffer.length) {
+      const char = buffer[i];
+      if (["ㅣ", "ㆍ", "ㅡ"].includes(char)) {
+        // Try to combine vowels
+        let combined = char;
+        let j = i + 1;
+        while (j < buffer.length && ["ㅣ", "ㆍ", "ㅡ"].includes(buffer[j])) {
+          const next = buffer[j];
+          const seq = combined + next;
+          const map: Record<string, string> = {
+            "ㅣㆍ": "ㅏ",
+            "ㅏㆍ": "ㅑ",
+            "ㆍㅣ": "ㅓ",
+            "ㅓㆍ": "ㅕ",
+            "ㆍㅡ": "ㅗ",
+            "ㅗㆍ": "ㅛ",
+            "ㅡㆍ": "ㅜ",
+            "ㅜㆍ": "ㅠ",
+            "ㅏㅣ": "ㅐ",
+            "ㅑㅣ": "ㅒ",
+            "ㅓㅣ": "ㅔ",
+            "ㅕㅣ": "ㅖ",
+            "ㅗㅣ": "ㅚ",
+            "ㅗㅏ": "ㅘ",
+            "ㅗㅐ": "ㅙ",
+            "ㅜㅣ": "ㅟ",
+            "ㅜㅓ": "ㅝ",
+            "ㅜㅔ": "ㅞ",
+            "ㅡㅣ": "ㅢ",
+          };
+          if (map[seq]) {
+            combined = map[seq];
+            j++;
+          } else {
+            break;
+          }
+        }
+        result.push(combined);
+        i = j;
+      } else {
+        result.push(char);
+        i++;
+      }
+    }
+    return result;
+  };
 
   const handleKey = (char: string) => {
     if (char === "\b") {
@@ -72,8 +137,8 @@ const MobileView: React.FC = () => {
     if (mode !== "mouse") return;
     const touch = e.touches[0];
     if (lastTouch.current) {
-      const dx = (touch.clientX - lastTouch.current.x) * 0.5;
-      const dy = (touch.clientY - lastTouch.current.y) * 0.5;
+      const dx = (touch.clientX - lastTouch.current.x) * 1.5; // Increased sensitivity
+      const dy = (touch.clientY - lastTouch.current.y) * 1.5;
       socket?.emit("mouse-event", { sessionId, data: { dx, dy } });
     }
     lastTouch.current = { x: touch.clientX, y: touch.clientY };
@@ -88,11 +153,22 @@ const MobileView: React.FC = () => {
       {/* Top Preview Bar */}
       <div className="p-4 bg-slate-900 border-b border-slate-800 flex flex-col gap-2">
         <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-widest">
-          <span>{mode === 'keyboard' ? 'Keyboard Mode' : 'Touchpad Mode'}</span>
+          <span>{mode === 'keyboard' ? '키보드 모드' : '터치패드 모드'}</span>
+          <button onClick={() => setTextBuffer([])} className="text-red-400 hover:text-red-300">전체 삭제</button>
           <span className="text-blue-400">{sessionId}</span>
         </div>
-        <div className="h-12 bg-slate-950 rounded-lg border border-slate-800 px-3 flex items-center overflow-x-auto whitespace-nowrap text-lg">
-          {previewText || <span className="text-slate-700">Waiting for input...</span>}
+        <div className="h-12 bg-slate-950 rounded-lg border border-slate-800 px-3 flex items-center justify-between overflow-hidden">
+          <div className="flex-1 overflow-x-auto whitespace-nowrap text-lg mr-2">
+            {previewText || <span className="text-slate-700">입력 대기 중...</span>}
+          </div>
+          {previewText && (
+            <button 
+              onClick={() => navigator.clipboard.writeText(previewText)}
+              className="p-2 bg-slate-800 rounded-md active:bg-slate-700"
+            >
+              <Copy className="w-4 h-4 text-blue-400" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -129,10 +205,10 @@ const MobileView: React.FC = () => {
                 <div className="w-24 h-24 rounded-full bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
                   <MousePointer2 className="w-10 h-10 text-blue-400" />
                 </div>
-                <p className="text-slate-500 font-medium">Slide to move cursor</p>
+                <p className="text-slate-500 font-medium">손가락을 움직여 커서를 이동하세요</p>
                 <div className="flex gap-4 mt-8">
-                  <div className="w-20 h-32 bg-slate-800 rounded-xl border border-slate-700 flex items-end justify-center pb-4 text-xs font-bold text-slate-500">LEFT</div>
-                  <div className="w-20 h-32 bg-slate-800 rounded-xl border border-slate-700 flex items-end justify-center pb-4 text-xs font-bold text-slate-500">RIGHT</div>
+                  <div className="w-20 h-32 bg-slate-800 rounded-xl border border-slate-700 flex items-end justify-center pb-4 text-xs font-bold text-slate-500">왼쪽 클릭</div>
+                  <div className="w-20 h-32 bg-slate-800 rounded-xl border border-slate-700 flex items-end justify-center pb-4 text-xs font-bold text-slate-500">오른쪽 클릭</div>
                 </div>
               </div>
             </motion.div>
@@ -147,14 +223,14 @@ const MobileView: React.FC = () => {
           className={`flex flex-col items-center gap-1 transition-colors ${mode === 'keyboard' ? 'text-blue-400' : 'text-slate-500'}`}
         >
           <KeyboardIcon className="w-6 h-6" />
-          <span className="text-[10px] font-bold uppercase">Keyboard</span>
+          <span className="text-[10px] font-bold uppercase">키보드</span>
         </button>
         <button 
           onClick={() => setMode("mouse")}
           className={`flex flex-col items-center gap-1 transition-colors ${mode === 'mouse' ? 'text-blue-400' : 'text-slate-500'}`}
         >
           <MousePointer2 className="w-6 h-6" />
-          <span className="text-[10px] font-bold uppercase">Touchpad</span>
+          <span className="text-[10px] font-bold uppercase">터치패드</span>
         </button>
       </div>
     </div>
@@ -213,8 +289,8 @@ const KeyboardLayout: React.FC<KeyboardProps> = ({ lang, onKey, onDeleteStart, o
         <Key label="ㅡ" color="bg-blue-600" onClick={() => onKey("ㅡ")} />
 
         {/* Row 4 */}
-        <Key icon={<Globe className="w-5 h-5" />} onClick={() => onLangChange("en")} />
-        <Key icon={<Hash className="w-5 h-5" />} onClick={() => onLangChange("num")} />
+        <Key label="한/영" onClick={() => onLangChange("en")} />
+        <Key label="숫자" onClick={() => onLangChange("num")} />
         <Key icon={<Space className="w-6 h-6" />} className="col-span-2" onClick={() => onKey(" ")} />
       </div>
     );
@@ -233,7 +309,7 @@ const KeyboardLayout: React.FC<KeyboardProps> = ({ lang, onKey, onDeleteStart, o
           </div>
         ))}
         <div className="grid grid-cols-4 gap-2 mt-auto">
-          <Key icon={<Type className="w-5 h-5" />} onClick={() => onLangChange("ko")} />
+          <Key label="한글" onClick={() => onLangChange("ko")} />
           <Key icon={<Space className="w-6 h-6" />} className="col-span-2" onClick={() => onKey(" ")} />
           <Key icon={<Delete className="w-6 h-6" />} onTouchStart={onDeleteStart} onTouchEnd={onDeleteEnd} />
         </div>
@@ -248,7 +324,7 @@ const KeyboardLayout: React.FC<KeyboardProps> = ({ lang, onKey, onDeleteStart, o
       {numKeys.join("").split("").map(k => (
         <Key key={k} label={k} onClick={() => onKey(k)} />
       ))}
-      <Key icon={<Type className="w-5 h-5" />} onClick={() => onLangChange("ko")} />
+      <Key label="한글" onClick={() => onLangChange("ko")} />
       <Key icon={<Space className="w-6 h-6" />} onClick={() => onKey(" ")} />
       <Key icon={<Delete className="w-6 h-6" />} onTouchStart={onDeleteStart} onTouchEnd={onDeleteEnd} />
     </div>

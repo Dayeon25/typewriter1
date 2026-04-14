@@ -12,7 +12,8 @@ const LaptopView: React.FC = () => {
   const [cursorPos, setCursorPos] = useState({ x: 50, y: 50 });
   const [isConnected, setIsConnected] = useState(false);
   
-  const remoteUrl = `${window.location.origin}/remote/${sessionId}`;
+  const baseUrl = process.env.APP_URL || window.location.origin;
+  const remoteUrl = `${baseUrl}/remote/${sessionId}`;
 
   useEffect(() => {
     const newSocket = io();
@@ -53,10 +54,10 @@ const LaptopView: React.FC = () => {
         <div className="space-y-8">
           <div className="space-y-2">
             <h1 className="text-4xl font-bold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-              Remote Control Hub
+              원격 제어 허브
             </h1>
             <p className="text-slate-400 text-lg">
-              Scan the QR code with your smartphone to start typing and controlling the mouse.
+              스마트폰으로 QR 코드를 스캔하여 타이핑과 마우스 제어를 시작하세요.
             </p>
           </div>
 
@@ -67,7 +68,7 @@ const LaptopView: React.FC = () => {
           <div className="space-y-4">
             <div className="flex items-center gap-3 text-slate-300">
               <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}`} />
-              <span>{isConnected ? 'Smartphone Connected' : 'Waiting for connection...'}</span>
+              <span>{isConnected ? '스마트폰 연결됨' : '연결 대기 중...'}</span>
             </div>
             <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-xl flex items-center justify-between">
               <code className="text-blue-400 font-mono">{remoteUrl}</code>
@@ -93,11 +94,11 @@ const LaptopView: React.FC = () => {
           <div className="absolute inset-0 p-6 flex flex-col">
             <div className="flex items-center gap-2 mb-4 text-slate-500 text-sm font-medium uppercase tracking-wider">
               <KeyboardIcon className="w-4 h-4" />
-              <span>Remote Text Buffer</span>
+              <span>원격 텍스트 입력창</span>
             </div>
             <textarea
               className="flex-1 bg-transparent border-none outline-none resize-none text-xl leading-relaxed text-slate-200 placeholder:text-slate-700"
-              placeholder="Start typing on your phone..."
+              placeholder="핸드폰에서 입력을 시작하세요..."
               value={text}
               readOnly
             />
@@ -107,7 +108,7 @@ const LaptopView: React.FC = () => {
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-all active:scale-95"
               >
                 {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                {copied ? 'Copied!' : 'Copy to Clipboard'}
+                {copied ? '복사 완료!' : '클립보드에 복사'}
               </button>
             </div>
           </div>
@@ -121,8 +122,8 @@ const LaptopView: React.FC = () => {
       {/* Footer Info */}
       <div className="mt-16 text-slate-500 text-sm text-center max-w-2xl">
         <p>
-          Note: Due to browser security restrictions, this app cannot directly control your OS mouse or type into other applications. 
-          Use the <strong>Copy to Clipboard</strong> button to paste your text into Excel, Word, or other apps.
+          참고: 브라우저 보안 제한으로 인해 이 앱은 OS 마우스를 직접 제어하거나 다른 앱에 직접 입력할 수 없습니다. 
+          <strong>클립보드에 복사</strong> 버튼을 눌러 엑셀, 한글 등 원하는 앱에 붙여넣으세요.
         </p>
       </div>
     </div>

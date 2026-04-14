@@ -29,11 +29,12 @@ async function startServer() {
     });
 
     socket.on("keyboard-event", ({ sessionId, data }) => {
-      // Broadcast to everyone in the session except sender
+      console.log(`Keyboard event in session ${sessionId}:`, data);
       socket.to(sessionId).emit("keyboard-event", data);
     });
 
     socket.on("mouse-event", ({ sessionId, data }) => {
+      // console.log(`Mouse event in session ${sessionId}`);
       socket.to(sessionId).emit("mouse-event", data);
     });
 
